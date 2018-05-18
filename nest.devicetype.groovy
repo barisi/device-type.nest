@@ -65,6 +65,12 @@
  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ *  Nest
+ *
+ *  Copyright 2018 Barisi Kane
+ *
+ */
 preferences {
 	input("username", "text", title: "Username", description: "Your Nest username (usually an email address)")
 	input("password", "password", title: "Password", description: "Your Nest password")
@@ -73,13 +79,14 @@ preferences {
 
 // for the UI
 metadata {
-	definition (name: "Nest", namespace: "smartthings-users", author: "dianoga7@3dgo.net") {
+	definition (name: "Nest", namespace: "barisi", author: "Barisi") {
 		capability "Polling"
 		capability "Relative Humidity Measurement"
 		capability "Thermostat"
 		capability "Temperature Measurement"
 		capability "Presence Sensor"
 		capability "Sensor"
+		capability "Hot Water"
 
 		command "away"
 		command "present"
@@ -128,12 +135,6 @@ metadata {
 			state("heat", action:"thermostat.auto", icon: "st.thermostat.heat")
 		}
 
-		standardTile("thermostatFanMode", "device.thermostatFanMode", inactiveLabel: true, decoration: "flat") {
-			state "auto", action:"thermostat.fanOn", icon: "st.thermostat.fan-auto"
-			state "on", action:"thermostat.fanCirculate", icon: "st.thermostat.fan-on"
-			state "circulate", action:"thermostat.fanAuto", icon: "st.thermostat.fan-circulate"
-		}
-
 		valueTile("heatingSetpoint", "device.heatingSetpoint") {
 			state "default", label:'${currentValue}°', unit:"Heat", backgroundColor:"#bc2323"
 		}
@@ -146,7 +147,6 @@ metadata {
 			state "idle", action:"polling.poll", label:'${name}', icon: "st.sonos.pause-icon"
 			state "cooling", action:"polling.poll", label:'  ', icon: "st.thermostat.cooling", backgroundColor:"#1e9cbb"
 			state "heating", action:"polling.poll", label:'  ', icon: "st.thermostat.heating", backgroundColor:"#bc2323"
-			state "fan only", action:"polling.poll", label:'${name}', icon: "st.Appliances.appliances11"
 		}
 
 		valueTile("humidity", "device.humidity", inactiveLabel: false) {
@@ -197,8 +197,8 @@ metadata {
 		// To expose buttons, comment out the first detials line below and uncomment the second details line below.
 		// To expose sliders, uncomment the first details line below and comment out the second details line below.
 
-		details(["temperature", "thermostatOperatingState", "humidity", "thermostatMode", "thermostatFanMode", "presence", "heatingSetpoint", "heatSliderControl", "coolingSetpoint", "coolSliderControl", "temperatureUnit", "refresh"])
-		// details(["temperature", "thermostatOperatingState", "humidity", "thermostatMode", "thermostatFanMode", "presence", "heatingSetpointDown", "heatingSetpoint", "heatingSetpointUp", "coolingSetpointDown", "coolingSetpoint", "coolingSetpointUp", "temperatureUnit", "refresh"])
+		details(["temperature", "thermostatOperatingState", "humidity", "thermostatMode", "presence", "heatingSetpoint", "heatSliderControl", "coolingSetpoint", "coolSliderControl", "temperatureUnit", "refresh"])
+		// details(["temperature", "thermostatOperatingState", "humidity", "thermostatMode", "presence", "heatingSetpointDown", "heatingSetpoint", "heatingSetpointUp", "coolingSetpointDown", "coolingSetpoint", "coolingSetpointUp", "temperatureUnit", "refresh"])
 
 		// ============================================================
 
@@ -374,31 +374,6 @@ def setThermostatMode(mode) {
 	}
 }
 
-def fanOn() {
-	setThermostatFanMode('on')
-}
-
-def fanAuto() {
-	setThermostatFanMode('auto')
-}
-
-def fanCirculate() {
-	setThermostatFanMode('circulate')
-}
-
-def setThermostatFanMode(mode) {
-	def modes = [
-		on: ['fan_mode': 'on'],
-		auto: ['fan_mode': 'auto'],
-		circulate: ['fan_mode': 'duty-cycle', 'fan_duty_cycle': 900]
-	]
-
-	api('fan_mode', modes.getAt(mode)) {
-		sendEvent(name: 'thermostatFanMode', value: mode)
-		poll()
-	}
-}
-
 def away() {
 	setPresence('away')
 	sendEvent(name: 'presence', value: 'not present')
@@ -424,21 +399,18 @@ def poll() {
 		data.structureId = it.data.link.getAt(settings.serial).structure.tokenize('.')[1]
 		data.structure = it.data.structure.getAt(data.structureId)
 
-		data.device.fan_mode = data.device.fan_mode == 'duty-cycle'? 'circulate' : data.device.fan_mode
 		data.structure.away = data.structure.away ? 'away' : 'present'
 
 		log.debug(data.shared)
 
 		def humidity = data.device.current_humidity
 		def temperatureType = data.shared.target_temperature_type
-		def fanMode = data.device.fan_mode
 		def heatingSetpoint = '--'
 		def coolingSetpoint = '--'
 
 		temperatureType = temperatureType == 'range' ? 'auto' : temperatureType
 
 		sendEvent(name: 'humidity', value: humidity)
-		sendEvent(name: 'thermostatFanMode', value: fanMode)
 		sendEvent(name: 'thermostatMode', value: temperatureType)
 
 		def temperatureUnit = device.latestValue('temperatureUnit')
@@ -497,8 +469,6 @@ def poll() {
 			sendEvent(name: 'thermostatOperatingState', value: "cooling")
 		} else if (data.shared.hvac_heater_state) {
 			sendEvent(name: 'thermostatOperatingState', value: "heating")
-		} else if (data.shared.hvac_fan_state) {
-			sendEvent(name: 'thermostatOperatingState', value: "fan only")
 		} else {
 			sendEvent(name: 'thermostatOperatingState', value: "idle")
 		}
@@ -514,7 +484,6 @@ def api(method, args = [], success = {}) {
 
 	def methods = [
 		'status': [uri: "/v2/mobile/${data.auth.user}", type: 'get'],
-		'fan_mode': [uri: "/v2/put/device.${settings.serial}", type: 'post'],
 		'thermostat_mode': [uri: "/v2/put/shared.${settings.serial}", type: 'post'],
 		'temperature': [uri: "/v2/put/shared.${settings.serial}", type: 'post'],
 		'presence': [uri: "/v2/put/structure.${data.structureId}", type: 'post']
